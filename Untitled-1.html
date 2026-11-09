@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Панель бота</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --fg: var(--tg-theme-text-color, #111111);
+  --hint: var(--tg-theme-hint-color, #7d7d7d);
+  --accent: var(--tg-theme-button-color, #2481cc);
+  --accent-fg: var(--tg-theme-button-text-color, #ffffff);
+  --card: var(--tg-theme-secondary-bg-color, #f1f1f1);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--tg-theme-bg-color, #17212b);
+    --fg: var(--tg-theme-text-color, #f5f5f5);
+    --hint: var(--tg-theme-hint-color, #8a9aa8);
+    --card: var(--tg-theme-secondary-bg-color, #232e3c);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.4 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+body { padding: calc(12px + env(safe-area-inset-top, 0px)) 12px calc(24px + env(safe-area-inset-bottom, 0px)); }
+h1 { font-size: 20px; margin: 4px 0 14px; }
+.row { display: flex; align-items: center; gap: 8px; padding: 12px 10px; border-radius: 10px; cursor: pointer; }
+.row:active { background: var(--card); }
+.branch { font-weight: 600; }
+.arrow { width: 16px; color: var(--hint); flex: none; }
+.title { flex: 1; }
+.badge { background: var(--card); color: var(--hint); border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 400; }
+.kids { margin-left: 14px; padding-left: 6px; border-left: 2px solid var(--card); }
+.leaf.on { color: var(--accent); font-weight: 600; }
+.inputrow { padding: 8px 10px 12px; }
+.hint { color: var(--hint); font-size: 14px; margin-bottom: 6px; }
+input, textarea { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--card);
+  background: var(--card); color: var(--fg); font: inherit; margin-bottom: 8px; }
+textarea { min-height: 80px; resize: vertical; }
+button { background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 10px;
+  padding: 10px 16px; font: inherit; cursor: pointer; }
+.note { color: var(--hint); font-size: 13px; margin-top: 18px; }
+</style>
+</head>
+<body>
+<h1>⚙️ Панель управления</h1>
+<div id="app"></div>
+<div class="note">После выбора действия панель закроется, бот применит изменение и пришлёт кнопку с актуальными настройками.</div>
+
+<script>
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+// Текущие настройки бот передаёт в адресе: ?e=1&m=ai&l=0&f=3&s=12&r=4&i=111,222
+const q = new URLSearchParams(location.search);
+const S = {
+  e: q.get("e") === "1",
+  m: q.get("m") || "text",
+  l: q.get("l") === "1",
+  f: Number(q.get("f")) || 0,
+  s: Number(q.get("s")) || 0,
+  r: Number(q.get("r")) || 0,
+  i: (q.get("i") || "").split(",").filter(Boolean)
+};
+
+function act(a, v) {
+  const data = JSON.stringify({ a: a, v: v });
+  if (tg) tg.sendData(data);
+  else alert("Это предпросмотр в браузере. Бот получил бы: " + data);
+}
+
+function ask(text, yes) {
+  if (tg && tg.showConfirm) tg.showConfirm(text, function (ok) { if (ok) yes(); });
+  else if (confirm(text)) yes();
+}
+
+function tree() {
+  return [
+    { t: "🤖 Автоответчик", badge: S.e ? "вкл" : "выкл", kids: [
+      { t: "Включить", on: S.e, go: function () { act("enabled", true); } },
+      { t: "Выключить", on: !S.e, go: function () { act("enabled", false); } },
+      { t: "🔀 Режим", badge: S.m, kids: [
+        { t: "text — один заготовленный текст", on: S.m === "text", go: function () { act("mode", "text"); } },
+        { t: "ai — автоответчик на нейронке", on: S.m === "ai", go: function () { act("mode", "ai"); } },
+        { t: "me — диалог от твоего лица", on: S.m === "me", go: function () { act("mode", "me"); } }
+      ]},
+      { t: "✏️ Текст автоответа (режим text)", input: "Например: занят, отвечу позже", multi: true,
+        go: function (v) { act("text", v); } },
+      { t: "ℹ️ Справка о тебе (режимы ai и me)", input: "Стиль, занятость, что можно сообщать", multi: true,
+        go: function (v) { act("info", v); } }
+    ]},
+    { t: "🧠 Обучение", badge: S.l ? "вкл" : "выкл", kids: [
+      { t: "Учиться на моих сообщениях", on: S.l, go: function () { act("learn", !S.l); } },
+      { t: "📏 Правила", badge: String(S.r), kids: [
+        { t: "Добавить правило", input: "Например: пиши короче и без смайликов",
+          go: function (v) { act("rule_add", v); } },
+        { t: "Удалить правило по номеру (список: команда /rules)", input: "Номер", type: "number",
+          go: function (v) { act("rule_del", Number(v)); } }
+      ]},
+      { t: "Стереть исправления (" + S.f + ") и примеры (" + S.s + ")",
+        go: function () { ask("Стереть исправления и примеры?", function () { act("clear_style", true); }); } }
+    ]},
+    { t: "🚫 Игнорируемые", badge: String(S.i.length), kids: [
+      { t: "Добавить id", input: "Числовой id из уведомления бота", type: "number",
+        go: function (v) { act("ignore_add", Number(v)); } }
+    ].concat(S.i.map(function (id) {
+      return { t: "✕ " + id + " (убрать)", go: function () { act("ignore_del", Number(id)); } };
+    }))}
+  ];
+}
+
+const open = new Set();
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function build(nodes, path, parent) {
+  nodes.forEach(function (n, idx) {
+    const id = path + "/" + idx;
+    const box = el("div", "node");
+    if (n.kids) {
+      const row = el("div", "row branch");
+      row.append(el("span", "arrow", open.has(id) ? "▾" : "▸"), el("span", "title", n.t));
+      if (n.badge) row.append(el("span", "badge", n.badge));
+      row.onclick = function () {
+        if (open.has(id)) open.delete(id); else open.add(id);
+        render();
+      };
+      box.append(row);
+      if (open.has(id)) {
+        const kids = el("div", "kids");
+        build(n.kids, id, kids);
+        box.append(kids);
+      }
+    } else if (n.input) {
+      const wrap = el("div", "inputrow");
+      wrap.append(el("div", "hint", n.t));
+      const inp = el(n.multi ? "textarea" : "input");
+      inp.placeholder = n.input;
+      if (n.type) inp.type = n.type;
+      const btn = el("button", "", "Сохранить");
+      btn.onclick = function () {
+        const v = inp.value.trim();
+        if (v) n.go(v);
+      };
+      wrap.append(inp, btn);
+      box.append(wrap);
+    } else {
+      const row = el("div", "row leaf" + (n.on ? " on" : ""), (n.on ? "✓ " : "") + n.t);
+      row.onclick = n.go;
+      box.append(row);
+    }
+    parent.append(box);
+  });
+}
+
+function render() {
+  const app = document.getElementById("app");
+  app.textContent = "";
+  build(tree(), "", app);
+}
+render();
+</script>
+</body>
+</html>
